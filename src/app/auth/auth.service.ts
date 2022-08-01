@@ -1,7 +1,9 @@
 import { HttpClient, HttpErrorResponse, HttpHeaderResponse } from "@angular/common/http";
 import { Injectable } from "@angular/core";
+import { Router } from "@angular/router";
 import { BehaviorSubject, Subject, throwError } from "rxjs";
 import { catchError, tap } from "rxjs/operators";
+import { environment } from "src/environments/environment";
 import { UserModel } from "./user.model";
 export interface AuthResponseData {
     expiresIn: string,
@@ -9,7 +11,7 @@ export interface AuthResponseData {
     refreshToken: string,
     idToken: string,
     email: string,
-    locaId: string,
+    localId: string,
     registered?: boolean
 
 }
@@ -17,30 +19,62 @@ export interface AuthResponseData {
 
 
 export class AuthService {
-    user = new BehaviorSubject<UserModel>(null)
-    constructor(private http: HttpClient) { }
+    user = new BehaviorSubject<UserModel>(null);
+    private tokenExpirationtimer:any;
+    constructor(private http: HttpClient,private router:Router) { }
 
     singUp(email: string, password: string) {
-        return this.http.post<AuthResponseData>('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyBFG9nDgArbHV0xVQ-qK6gy8pqqiKWSAUM',
+        return this.http.post<AuthResponseData>('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key='+environment.firebaseAPIKey,
             {
                 email: email,
                 password: password,
                 returnSecureToken: true
             }).pipe(catchError(this.handleError),tap((resData)=>{
-                this.handleAuthentication(resData.email,resData.idToken,resData.locaId,+resData.expiresIn)
+                this.handleAuthentication(resData.email,resData.localId,resData.idToken,+resData.expiresIn)
             }))
     }
 
     login(email: string, password: string) {
-        return this.http.post<AuthResponseData>('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyBFG9nDgArbHV0xVQ-qK6gy8pqqiKWSAUM', {
+        return this.http.post<AuthResponseData>('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+environment.firebaseAPIKey, {
             email: email,
             password: password,
             returnSecureToken: true
         }).pipe(catchError(this.handleError),tap((resData)=>{
             console.log(resData)
-            this.handleAuthentication(resData.email,resData.idToken,resData.locaId,+resData.expiresIn)
+            this.handleAuthentication(resData.email,resData.localId,resData.idToken,+resData.expiresIn)
         })) 
     }
+    
+    autologin(){
+        const userData:{email:string,id:string,_token:string,_tokenExpirationDate:string}=JSON.parse(localStorage.getItem("userData")) ;
+        if(!userData){
+            return ;
+        }
+        const loadUser=new UserModel(userData.email,userData.id,userData._token, new Date(userData._tokenExpirationDate));
+        
+        if(loadUser.token){
+            this.user.next(loadUser);
+            const expirationDuration=new Date(userData._tokenExpirationDate).getTime()-new Date().getTime();
+            this.autoLogOut(expirationDuration)
+        }
+    }
+
+    logout(){
+        this.user.next(null);
+        this.router.navigate(['/auth']);
+        localStorage.removeItem('userData')
+        if(this.tokenExpirationtimer){
+            clearTimeout(this.tokenExpirationtimer);
+        }
+        this.tokenExpirationtimer=null;
+    }
+
+    autoLogOut(expirazationtimer:number){
+       this.tokenExpirationtimer=setTimeout(() => {
+            this.logout()
+        }, expirazationtimer);
+    }
+
 
     //handle Authentication 
     private handleAuthentication(email: string, userId: string, token: string, expiresIn: number) {
@@ -48,6 +82,8 @@ export class AuthService {
         const user = new UserModel(email, userId, token, expirationDate);
         console.log(user)
         this.user.next(user);
+        this.autoLogOut(expiresIn*1000)
+        localStorage.setItem('userData',JSON.stringify(user))
     }
     //handling errors
     private handleError(errorRes: HttpErrorResponse) {

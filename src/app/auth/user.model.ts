@@ -1,7 +1,5 @@
 export class UserModel {
-        locaId(email: string, token: string, locaId: any, expiresIn: any) {
-            throw new Error("Method not implemented.");
-        }
+        
         constructor(
                 public email: string,
                 public id: string,
